@@ -1,86 +1,122 @@
 #!/bin/bash
+# ⚡ OpenVPN 2.5.9 + XOR Full Installer ⚡
+# Based on Angristan's OpenVPN installer and Tunnelblick XOR patches
 
 set -e
 
-# 1. Download and prepare OpenVPN installer script
-curl -O https://raw.githubusercontent.com/angristan/openvpn-install/master/openvpn-install.sh
-chmod +x openvpn-install.sh
+# Functions
+function warn() {
+  echo -e "\e[31m[ERROR]\e[0m $1"
+}
 
-# 2. Remove existing OpenVPN installation if present
-apt remove -y openvpn || true
+function info() {
+  echo -e "\e[32m[INFO]\e[0m $1"
+}
 
-# 3. Update system and install build dependencies
-apt update && apt dist-upgrade -y
-apt install -y build-essential libssl-dev iproute2 liblz4-dev liblzo2-dev libpam0g-dev libpkcs11-helper1-dev libsystemd-dev resolvconf pkg-config
+function download_or_exit() {
+  local url="$1"
+  local output="$2"
 
-# 4. Download and extract OpenVPN 2.5.9 source
-cd /usr/local/src
-wget https://swupdate.openvpn.org/community/releases/openvpn-2.5.9.tar.gz
+  if ! wget -q --show-progress "$url" -O "$output"; then
+    warn "Failed to download $url"
+    exit 1
+  fi
+}
 
-# Ensure clean state
-rm -rf openvpn-2.5.9
+# Ask to install Angristan OpenVPN
+read -rp "\n👉 Proceed with Angristan OpenVPN Install? (Y/n): " install_openvpn
+install_openvpn=${install_openvpn:-y}
 
-# Extract
- tar xvf openvpn-2.5.9.tar.gz
-cd openvpn-2.5.9
+if [[ "$install_openvpn" =~ ^[Yy]$ ]]; then
+  info "Downloading and running Angristan OpenVPN installer..."
+  wget https://raw.githubusercontent.com/angristan/openvpn-install/master/openvpn-install.sh -O openvpn-install.sh
+  chmod +x openvpn-install.sh
+  bash openvpn-install.sh
+else
+  info "Skipping Angristan OpenVPN install."
+fi
 
-# 5. Download XOR patches
-wget https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/02-tunnelblick-openvpn_xorpatch-a.diff
-wget https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/03-tunnelblick-openvpn_xorpatch-b.diff
-wget https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/04-tunnelblick-openvpn_xorpatch-c.diff
-wget https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/05-tunnelblick-openvpn_xorpatch-d.diff
-wget https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/06-tunnelblick-openvpn_xorpatch-e.diff
+# Ask to install XOR patch
+read -rp "\n👉 Proceed with XOR patch installation? (Y/n): " install_xor
+install_xor=${install_xor:-y}
 
-# 6. Apply patches
-patch -p1 < 02-tunnelblick-openvpn_xorpatch-a.diff
-patch -p1 < 03-tunnelblick-openvpn_xorpatch-b.diff
-patch -p1 < 04-tunnelblick-openvpn_xorpatch-c.diff
-patch -p1 < 05-tunnelblick-openvpn_xorpatch-d.diff
-patch -p1 < 06-tunnelblick-openvpn_xorpatch-e.diff
+if [[ "$install_xor" =~ ^[Yy]$ ]]; then
+  info "Installing build dependencies..."
+  apt update
+  apt install -y build-essential libssl-dev liblzo2-dev libpam0g-dev libpkcs11-helper1-dev libsystemd-dev pkg-config liblz4-dev resolvconf
 
-# 7. Configure, compile, and install OpenVPN
-./configure --enable-static=yes --enable-shared --disable-debug --disable-plugin-auth-pam --disable-dependency-tracking
-make -j$(nproc)
-make install
+  info "Downloading OpenVPN 2.5.9 source..."
+  wget https://swupdate.openvpn.net/community/releases/openvpn-2.5.9.tar.gz
+  tar -xzf openvpn-2.5.9.tar.gz
+  cd openvpn-2.5.9 || exit 1
 
-# 8. Create OpenVPN service file
-cat << EOF > /etc/systemd/system/openvpn@server.service
-[Unit]
-Description=OpenVPN Robust And Highly Flexible Tunneling Application On %I
-After=syslog.target network.target
+  info "Downloading Tunnelblick XOR patches..."
+  download_or_exit "https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/02-tunnelblick-openvpn_xorpatch-a.diff" "02.diff"
+  download_or_exit "https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/03-tunnelblick-openvpn_xorpatch-b.diff" "03.diff"
+  download_or_exit "https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/04-tunnelblick-openvpn_xorpatch-c.diff" "04.diff"
+  download_or_exit "https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/05-tunnelblick-openvpn_xorpatch-d.diff" "05.diff"
+  download_or_exit "https://raw.githubusercontent.com/Tunnelblick/Tunnelblick/master/third_party/sources/openvpn/openvpn-2.5.9/patches/06-tunnelblick-openvpn_xorpatch-e.diff" "06.diff"
 
-[Service]
-Type=forking
-PrivateTmp=true
-ExecStart=/usr/local/sbin/openvpn --daemon --cd /etc/openvpn/ --config /etc/openvpn/server.conf
-Restart=on-failure
+  info "Applying patches..."
+  patch -p1 < 02.diff
+  patch -p1 < 03.diff
+  patch -p1 < 04.diff
+  patch -p1 < 05.diff
+  patch -p1 < 06.diff
 
-[Install]
-WantedBy=multi-user.target
-EOF
+  info "Configuring and building OpenVPN with XOR support..."
+  ./configure
+  make -j$(nproc)
+  make install
 
-# 9. Enable service
-gsystemctl -f enable openvpn@server
+  cd ~ || exit 1
 
-# 10. Generate random XOR key and update configurations
-KEY=$(openssl rand -hex 20)
-echo "Using scramble xormask key: $KEY"
+  info "✅ OpenVPN 2.5.9 with XOR patch installed."
+else
+  info "Skipping XOR patch installation."
+fi
 
-# Update server.conf, client-template.txt, client.ovpn
-sed -i "s/^port .*/port 443/" /etc/openvpn/server.conf
-sed -i "s/1194/443/g" /etc/openvpn/client-template.txt
+# Generate random XOR key
+XOR_KEY=$(xxd -p -l 20 /dev/urandom)
+echo "\n🔑 Generated random XOR key: $XOR_KEY"
 
-# Add XOR scramble key to configs
-echo "scramble xormask $KEY" >> /etc/openvpn/server.conf
-echo "scramble xormask $KEY" >> /etc/openvpn/client-template.txt
-echo "scramble xormask $KEY" >> /root/client.ovpn
+# Add scramble directive to server and client templates
+if [ -f /etc/openvpn/server.conf ]; then
+  echo "scramble xormask $XOR_KEY" >> /etc/openvpn/server.conf
+  echo "ping 5" >> /etc/openvpn/server.conf
+  echo "ping-restart 30" >> /etc/openvpn/server.conf
+  echo "ping-timer-rem" >> /etc/openvpn/server.conf
+  echo "fragment 1200" >> /etc/openvpn/server.conf
+  echo "mssfix 1200" >> /etc/openvpn/server.conf
+  systemctl restart openvpn@server || warn "OpenVPN service restart failed."
+else
+  warn "/etc/openvpn/server.conf not found!"
+fi
 
-# Add pinging and paddling options
-grep -q '^ping ' /etc/openvpn/server.conf || echo -e "\nping 10\nping-restart 120\nmssfix 1300\ntun-mtu 1400\nexplicit-exit-notify 1" >> /etc/openvpn/server.conf
+if [ -f /etc/openvpn/client-template.txt ]; then
+  echo "scramble xormask $XOR_KEY" >> /etc/openvpn/client-template.txt
+  echo "fragment 1200" >> /etc/openvpn/client-template.txt
+  echo "mssfix 1200" >> /etc/openvpn/client-template.txt
+else
+  warn "/etc/openvpn/client-template.txt not found!"
+fi
 
-# 11. Start OpenVPN service
-systemctl restart openvpn@server
+if [ -f ~/client.ovpn ]; then
+  echo "scramble xormask $XOR_KEY" >> ~/client.ovpn
+  echo "fragment 1200" >> ~/client.ovpn
+  echo "mssfix 1200" >> ~/client.ovpn
+fi
 
-# 12. Final info
-echo "\nOpenVPN 2.5.9 with XOR scrambling is installed and running!"
-echo "XOR key was set to: $KEY"
+# Ask to install Cron Job
+read -rp "\n👉 Install Cron Job to restart OpenVPN daily? (Y/n): " install_cron
+install_cron=${install_cron:-y}
+
+if [[ "$install_cron" =~ ^[Yy]$ ]]; then
+  info "Setting up cron job..."
+  (crontab -l 2>/dev/null; echo "0 4 * * * systemctl restart openvpn@server") | crontab -
+  info "✅ Cron job installed to restart OpenVPN daily at 4 AM."
+else
+  info "Skipping cron job installation."
+fi
+
+info "\n⚡ All done! Enjoy your secured VPN! ⚡"
